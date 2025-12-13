@@ -52,6 +52,16 @@ impl Dial {
         self.maximum - self.minimum + 1
     }
 
+    fn set_position(&mut self, position: i32) {
+        if position < self.minimum || position > self.maximum {
+            panic!(
+                "Position {position} out of range [{},{}]",
+                self.minimum, self.maximum
+            );
+        }
+        self.position = position;
+    }
+
     fn step(&mut self, direction: Direction, steps: i32) {
         println!(
             "Current position: {}, moving {direction:?} by {steps} steps",
@@ -61,39 +71,52 @@ impl Dial {
         // every time we move, we need to check if we cross past 0 and increment the counter each time
         // or if we end at 0, increment the counter
 
-        // if the direction is left and we cross below DIAL_MIN, we wrap around to DIAL_MAX
-        // if the direction is right and we cross above DIAL_MAX, we wrap around to DIAL_MIN
+        // to calculate where the position will land
+        let absolute_steps = steps % self.get_range();
+
         match direction {
             Direction::Left => {
-                if self.position - steps < self.minimum {
+                let mut new_absolute_position = self.position - absolute_steps;
+                println!(
+                    "    Calculated new position (before wrap): {}",
+                    new_absolute_position
+                );
+                if new_absolute_position < self.minimum {
+                    println!("    Crossing 0 going left");
+                    new_absolute_position =
+                        (new_absolute_position + self.get_range()) % self.get_range();
+                    println!("    New position after wrap: {new_absolute_position}");
+                    self.counter += steps / self.get_range() + 1;
                     if self.position == 0 {
+                        println!("    Decrementing counter by 1 because we started at 0");
                         self.counter -= 1; // we start at 0, so don't double count
                     }
-                    self.position = (self.position - steps + self.get_range()) % self.get_range();
-
-                    // we crossed 0, increment counter
-                    self.counter += steps / self.get_range() + 1;
                 } else {
-                    self.position -= steps;
-                    if self.position == 0 {
+                    if new_absolute_position == 0 {
                         self.counter += 1;
                     }
                 }
+                self.set_position(new_absolute_position);
             }
             Direction::Right => {
-                if self.position + steps > DIAL_MAX {
-                    self.position = (self.position + steps) % self.get_range();
-
-                    // we crossed 0, increment counter
+                let mut new_absolute_position = (self.position + absolute_steps) % self.get_range();
+                if self.position + steps > self.maximum {
+                    println!("    Crossing 0 going right");
+                    println!("    New position after wrap: {new_absolute_position}");
                     self.counter += steps / self.get_range() + 1;
-                } else {
-                    self.position += steps;
                     if self.position == 0 {
+                        println!("    Decrementing counter by 1 because we started at 0");
+                        self.counter -= 1; // we start at 0, so don't double count
+                    }
+                } else {
+                    if new_absolute_position == 0 {
                         self.counter += 1;
                     }
                 }
+                self.set_position(new_absolute_position);
             }
         }
+
         println!(
             "    New position: {}, counter: {}",
             self.position, self.counter
@@ -108,10 +131,13 @@ impl Dial {
 }
 
 fn main() {
-    let mut dial = Dial::default();
+    let mut dial = Dial::new(DIAL_MIN, DIAL_MAX, DIAL_START);
 
     let input: &str = include_str!("../data/input.txt");
     for line in input.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
         let (direction, steps_str) = Dial::parse_line(line);
         dial.step(direction, steps_str);
     }
@@ -137,6 +163,22 @@ mod tests {
 
         println!("Test final position: {}", dial.position);
         println!("Test counter: {}", dial.counter);
+    }
+
+    #[test]
+    fn test_full() {
+        let mut dial = Dial::default();
+
+        let input: &str = include_str!("../data/input.txt");
+        for line in input.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let (direction, steps_str) = Dial::parse_line(line);
+            dial.step(direction, steps_str);
+        }
+        assert_eq!(dial.position, 68);
+        assert_eq!(dial.counter, 6228);
     }
 
     #[test]
@@ -187,5 +229,37 @@ mod tests {
         dial.step(Direction::Right, 250); // 50 + 250 = 300 -> wraps to 0 (=300 % DIAL_RANGE)
         assert_eq!(dial.position, 0);
         assert_eq!(dial.counter, 3); // crossed 0 twice + ended on 0
+
+        dial.step(Direction::Left, 1); // 0 - 1 = -1 -> wraps to 99
+        assert_eq!(dial.position, 99);
+        assert_eq!(dial.counter, 3); // no additional crossing
+
+        dial.step(Direction::Right, 1); // 99 + 1 = 100 -> wraps to 0
+        assert_eq!(dial.position, 0);
+        assert_eq!(dial.counter, 4); // crossed 0 once more
+
+        dial.step(Direction::Right, 1); // 0 + 1 = 1
+        assert_eq!(dial.position, 1);
+        assert_eq!(dial.counter, 4); // no additional crossing
+
+        dial.step(Direction::Left, 1); // 1 - 1 = 0
+        assert_eq!(dial.position, 0);
+        assert_eq!(dial.counter, 5); // crossed 0 once more
+
+        dial.step(Direction::Left, 100); // 0 - 100 = -100 -> wraps to 0
+        assert_eq!(dial.position, 0);
+        assert_eq!(dial.counter, 6); // crossed 0 once more
+
+        dial.step(Direction::Right, 201); // 0 + 201 = 201 -> wraps to 1
+        assert_eq!(dial.position, 1);
+        assert_eq!(dial.counter, 8); // crossed 0 twice more (at 100 and 200)
+
+        dial.step(Direction::Left, 202); // 1 - 202 = -201 -> wraps to 99
+        assert_eq!(dial.position, 99);
+        assert_eq!(dial.counter, 11); // crossed 0 3 times more (at 0, -100, -200)
+
+        dial.step(Direction::Right, 398); // 99 + 398 = 497 -> wraps to 97
+        assert_eq!(dial.position, 97);
+        assert_eq!(dial.counter, 15); // crossed 0 4 times more (at 100, 200, 300, 400)
     }
 }
