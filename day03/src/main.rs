@@ -1,5 +1,6 @@
 const MAX_BATTERIES_ENABLED: usize = 12;
 
+#[derive(Debug)]
 struct Battery {
     digit: u8,
     enabled: bool,
@@ -15,6 +16,7 @@ impl Battery {
 
     fn enable(&mut self) {
         self.enabled = true;
+        
     }
 
     fn disable(&mut self) {
@@ -42,17 +44,23 @@ impl Bank {
 
     /// From a bank of batteries, find the maximum joltage
     fn max_joltage(&mut self) -> u64 {
-        let mut enabled_count = 0;
-        for i in (0..10).rev() {
+        let mut total_enabled_count = 0;
+        for i in (1..=9).rev() {
+            let mut curr_digit_enabled_count = 0;
             // starting from the highest possible digit, enable all batteries with that digit
-            for battery in &mut self.batteries {
-                if battery.digit as usize == i && enabled_count < MAX_BATTERIES_ENABLED {
-                    enabled_count += 1;
+            for battery in &mut self.batteries.iter_mut().rev() {
+                if battery.digit as usize == i && total_enabled_count < MAX_BATTERIES_ENABLED {
+                    curr_digit_enabled_count += 1;
+                    total_enabled_count += 1;
                     battery.enable();
                 }
             }
-            println!("Enabled {} batteries of digit {}", enabled_count, i);
+            println!("Enabled {curr_digit_enabled_count} batteries of digit {i}");
         }
+        assert!(
+            total_enabled_count <= MAX_BATTERIES_ENABLED,
+            "Enabled too many batteries: {total_enabled_count} (max {MAX_BATTERIES_ENABLED})",
+        );
         self.print_batteries();
         // calculate the total joltage
         let enabled_batteries_string = self
@@ -61,7 +69,13 @@ impl Bank {
             .filter(|b| b.enabled)
             .map(|b| b.digit.to_string())
             .collect::<String>();
-        let joltage = enabled_batteries_string.parse::<u64>().unwrap();
+        assert!(
+            !enabled_batteries_string.is_empty(),
+            "No batteries enabled?",
+        );
+        let joltage = enabled_batteries_string.parse::<u64>().expect(&format!(
+            "Failed to parse joltage: '{enabled_batteries_string}'",
+        ));
         joltage
     }
 
